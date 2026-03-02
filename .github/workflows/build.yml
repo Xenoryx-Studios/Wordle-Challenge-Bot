@@ -1,0 +1,43 @@
+name: Build & Push Docker Image to GHCR (SHA)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Log in to GHCR
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Set Docker image tags
+      - name: Set Docker image tags
+        run: |
+          SHA_TAG=${GITHUB_SHA::7}
+          IMAGE_SHA=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wordle-bot:$SHA_TAG
+          IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wordle-bot:latest
+          echo "IMAGE_SHA=$IMAGE_SHA" >> $GITHUB_ENV
+          echo "IMAGE_LATEST=$IMAGE_LATEST" >> $GITHUB_ENV
+
+      # Step 4: Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build -t $IMAGE_SHA -t $IMAGE_LATEST .
+
+      # Step 5: Push Docker image
+      - name: Push Docker image
+        run: |
+          docker push $IMAGE_SHA
+          docker push $IMAGE_LATEST
