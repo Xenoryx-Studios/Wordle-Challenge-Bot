@@ -7,6 +7,15 @@ A Discord bot that posts daily Wordle challenges to your server.
 - Posts Wordle rules and creates a dedicated thread for each challenge.
 - Commands to manually initialize Wordle or set schedules.
 
+# Challenge Rules
+
+**Wordle Challenge Rules**
+1. Each day has a starter word.
+2. Use it as your first guess in Wordle.
+3. Try to solve in as few guesses as possible.
+4. Post your results in the channel using the Wordle share squares.
+Have fun!
+
 
 # Commands
 
