@@ -37,13 +37,15 @@ paramaters:
 wordle-discord-bot/
 ├─ bot.py                # Main bot entry
 ├─ core/
-│  ├─ guild_config.py    # Handles per-guild state, schedule, and channel
+│  ├─ guild_config.py    # Handles guild state, schedule, and channel. this should probably move to a DB but /shrug this works for now
 │  ├─ wordle_utils.py    # Word picking and posting logic
-│  ├─ themes.py          # Theme configurations
+│  ├─ themes.py          # Theme configurations; only default theme exists currently
 ├─ cogs/
-│  ├─ wordle_commands.py # Slash commands: init, schedule
+│  ├─ wordle_commands.py # Slash commands: /wordle_init, /wordle_schedule
 │  ├─ scheduler.py       # Background task for automatic posting
 ├─ data/
+│  ├─ guild_config.json  # stores state and stuff /shrug
+│  ├─ wordle_words_christmas.json  # not implemented yet but maybe make some different word themes in the future?
 │  ├─ wordle_words.json  # Word list for default theme
 ├─ requirements.txt      # Python dependencies
 ```

@@ -1,7 +1,7 @@
 import json
 import os
 
-CONFIG_FILE = "core/guild_config.json"
+CONFIG_FILE = "data/guild_config.json"
 
 def load_guild_config():
     if not os.path.exists(CONFIG_FILE):
