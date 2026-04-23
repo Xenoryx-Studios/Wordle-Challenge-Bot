@@ -2,7 +2,7 @@ import discord
 from discord.ext import tasks, commands
 from datetime import datetime
 import pytz
-from core.guild_config import load_guild_config, save_guild_config, set_guild_state
+from core.guild_config import load_guild_config, save_guild_config
 from core.themes import THEMES
 from core.wordle_utils import post_word
 

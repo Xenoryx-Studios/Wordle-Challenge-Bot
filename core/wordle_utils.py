@@ -2,8 +2,7 @@ import json
 import random
 from datetime import datetime
 import logging
-from core.themes import THEMES
-from core.guild_config import set_guild_state, get_guild_state
+from core.guild_config import set_guild_state
 
 logger = logging.getLogger("wordle-bot")
 
