@@ -23,3 +23,11 @@ core/__pycache__/
 # Docker
 *.pid
 *.sock
+
+# Runtime guild state (contains per-server channel IDs / schedules)
+data/guild_config.json
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+
