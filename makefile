@@ -12,7 +12,6 @@ run:
 	docker run -d --name $(CONTAINER_NAME) \
 	-e DISCORD_TOKEN=$(TOKEN) \
 	-v $(PWD)/data:/app/data \
-	-v $(PWD)/guild_config.json:/app/guild_config.json \
 	$(IMAGE_NAME)
 
 # Stop and remove container
