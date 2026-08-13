@@ -51,7 +51,7 @@ jobs:
       # get registry credentials, and shouldn't be able to publish images.
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
