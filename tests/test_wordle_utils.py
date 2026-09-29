@@ -150,7 +150,7 @@ async def test_post_word_records_challenge_date_in_guild_timezone(word_list_file
 
 async def test_post_word_persists_into_an_empty_but_present_state_dict(word_list_file):
     # An empty dict {} is a legitimate "not yet initialized" state (e.g. a
-    # guild that has never run /wordle_init), distinct from state=None. It
+    # guild that has never run /wordle_start), distinct from state=None. It
     # must still get populated and persisted, not silently skipped just
     # because {} is falsy.
     theme = dict(THEME, file=word_list_file(["apple"]))

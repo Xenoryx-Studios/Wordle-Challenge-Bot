@@ -65,20 +65,16 @@ async def set_guild_channel(guild_id, channel_id):
     await _update_guild(guild_id, lambda entry: entry.update(channel_id=channel_id))
 
 
-async def set_guild_schedule(guild_id, hour, minute, timezone):
-    await _update_guild(
-        guild_id,
-        lambda entry: entry.update(hour=hour, minute=minute, timezone=timezone),
-    )
+async def set_guild_timezone(guild_id, timezone):
+    await _update_guild(guild_id, lambda entry: entry.update(timezone=timezone))
 
 
-def _clear_schedule_fields(entry):
-    # channel_id must be cleared too: the scheduler defaults hour/minute/
-    # timezone to midnight UTC when they're absent but channel_id is still
-    # set, so leaving channel_id behind would keep auto-posting there.
+def _clear_posting_fields(entry):
+    # A server with no channel_id is Stopped. hour/minute are only removed
+    # as leftovers from the old scheduling command; nothing reads them.
     for key in ("channel_id", "hour", "minute", "timezone"):
         entry.pop(key, None)
 
 
-async def clear_guild_schedule(guild_id):
-    await _update_guild(guild_id, _clear_schedule_fields)
+async def stop_guild(guild_id):
+    await _update_guild(guild_id, _clear_posting_fields)

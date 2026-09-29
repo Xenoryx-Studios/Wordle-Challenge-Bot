@@ -52,7 +52,7 @@ async def _tick(scheduler, fixed_now):
 
 async def _start_server(guild_id, channel_id, tz_name, state=None):
     await guild_config.set_guild_channel(guild_id, channel_id)
-    await guild_config.set_guild_schedule(guild_id, 9, 0, tz_name)
+    await guild_config.set_guild_timezone(guild_id, tz_name)
     if state is not None:
         await guild_config.set_guild_state(guild_id, state)
 
@@ -101,7 +101,8 @@ async def test_late_post_after_being_offline_at_midnight():
 
 async def test_server_without_challenge_date_waits_for_midnight():
     # Set up with the old commands: stored post time 09:00, no Challenge date.
-    await _start_server(1, 100, "UTC", {"word": "CRANE", "used_words": ["CRANE"]})
+    await guild_config.save_guild_config({"1": {"channel_id": 100, "hour": 9, "minute": 0, "timezone": "UTC"}})
+    await guild_config.set_guild_state(1, {"word": "CRANE", "used_words": ["CRANE"]})
     channel = _make_channel(1)
     scheduler = _make_scheduler(_make_bot({100: channel}))
 
@@ -118,7 +119,7 @@ async def test_server_without_challenge_date_waits_for_midnight():
 
 async def test_stopped_server_gets_no_challenge():
     await _start_server(1, 100, "UTC", {"used_words": [], "challenge_date": "2025-12-31"})
-    await guild_config.clear_guild_schedule(1)
+    await guild_config.stop_guild(1)
     channel = _make_channel(1)
     scheduler = _make_scheduler(_make_bot({100: channel}))
 
