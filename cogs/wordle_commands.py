@@ -80,19 +80,23 @@ class WordleCommands(commands.Cog):
             )
             return
 
-        await set_guild_channel(guild_id, channel_id)
-        await set_guild_timezone(guild_id, timezone)
-
-        rules_msg = await interaction.channel.send(RULES_MESSAGE)
-        try:
-            await rules_msg.pin()
-        except discord.Forbidden:
-            logger.warning(f"Missing permissions to pin messages in guild {guild_id}")
-
         # Existing state (Used Words in particular) is kept, so restarting a
         # Stopped server does not reopen old Starter Words.
         entry = await get_guild_entry(guild_id)
         state = entry.get("state", {})
+        # The rules are only posted where they are not already pinned: on a
+        # first start, a move to another channel, or a restart after Stopped.
+        needs_rules = entry.get("channel_id") != channel_id
+
+        await set_guild_channel(guild_id, channel_id)
+        await set_guild_timezone(guild_id, timezone)
+
+        if needs_rules:
+            rules_msg = await interaction.channel.send(RULES_MESSAGE)
+            try:
+                await rules_msg.pin()
+            except discord.Forbidden:
+                logger.warning(f"Missing permissions to pin messages in guild {guild_id}")
         started = f"✅ Wordle Challenge started in <#{channel_id}>. A new Challenge posts daily at 00:00 {timezone}."
         if challenge_posted_today(state, timezone):
             await interaction.followup.send(
@@ -268,7 +272,7 @@ class WordleCommands(commands.Cog):
         ]
         if reminders_enabled():
             opted_in = len(entry.get("reminder_members", []))
-            lines.append(f"🔔 Reminders: on at {REMINDER_HOUR}:00, {opted_in} member(s) opted in")
+            lines.append(f"🔔 Reminders: on at {REMINDER_HOUR}:00 {tz_name}, {opted_in} member(s) opted in")
         else:
             lines.append("🔕 Reminders: not enabled on this bot")
 

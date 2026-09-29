@@ -110,6 +110,43 @@ async def test_wordle_start_does_not_post_a_second_challenge_today():
     assert "already posted" in interaction.followup.send.await_args.args[0]
 
 
+async def test_wordle_start_again_in_the_same_channel_posts_no_rules():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.set_guild_timezone(42, "UTC")
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE"], "challenge_date": local_today("UTC")})
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "America/Toronto")
+
+    interaction.channel.send.assert_not_awaited()  # no rules, no second Challenge
+    entry = await guild_config.get_guild_entry(42)
+    assert entry["timezone"] == "America/Toronto"
+
+
+async def test_wordle_start_in_a_new_channel_posts_the_rules_there():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE"], "challenge_date": local_today("UTC")})
+    interaction = _make_interaction(guild_id=42, channel_id=8)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
+
+    assert interaction.channel.send.await_args_list[0].args[0] == RULES_MESSAGE
+    interaction.channel.send.return_value.pin.assert_awaited_once()
+
+
+async def test_wordle_start_after_stop_posts_the_rules_again():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.stop_guild(42)
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
+
+    assert interaction.channel.send.await_args_list[0].args[0] == RULES_MESSAGE
+
+
 async def test_old_setup_commands_are_gone():
     names = {command.name for command in WordleCommands(MagicMock()).get_app_commands()}
     assert "wordle_start" in names
@@ -431,7 +468,7 @@ async def test_wordle_status_shows_reminders(monkeypatch):
 
     await cog.status.callback(cog, interaction)
 
-    assert "Reminders: on at 21:00, 2 member(s) opted in" in interaction.followup.send.await_args.args[0]
+    assert "Reminders: on at 21:00 UTC, 2 member(s) opted in" in interaction.followup.send.await_args.args[0]
 
 
 async def test_wordle_stop_keeps_reminder_opt_ins():
