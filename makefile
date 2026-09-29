@@ -2,6 +2,7 @@
 IMAGE_NAME = wordle-bot
 CONTAINER_NAME = wordle-bot
 TOKEN =
+ENABLE_REMINDERS =
 
 # Build Docker image
 build:
@@ -11,6 +12,7 @@ build:
 run:
 	docker run -d --name $(CONTAINER_NAME) \
 	-e DISCORD_TOKEN=$(TOKEN) \
+	-e ENABLE_REMINDERS=$(ENABLE_REMINDERS) \
 	-v $(PWD)/data:/app/data \
 	$(IMAGE_NAME)
 

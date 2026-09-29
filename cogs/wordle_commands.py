@@ -12,11 +12,14 @@ from core.guild_config import (
     set_guild_state,
     set_guild_theme,
     set_guild_timezone,
+    set_reminder_opt_in,
     stop_guild,
 )
+from core.settings import REMINDER_HOUR, reminders_enabled
 from core.themes import DEFAULT_THEME, available_themes, get_theme
 from core.wordle_utils import (
     challenge_posted_today,
+    find_thread,
     pick_word,
     post_word,
     set_theme_used_words,
@@ -147,18 +150,6 @@ class WordleCommands(commands.Cog):
             ephemeral=True,
         )
 
-    async def _find_thread(self, thread_id):
-        if thread_id is None:
-            return None
-        thread = self.bot.get_channel(thread_id)
-        if thread is not None:
-            return thread
-        try:
-            # Archived threads are not in the cache.
-            return await self.bot.fetch_channel(thread_id)
-        except discord.HTTPException:
-            return None
-
     @app_commands.command(name="wordle_replace", description="Replace today's Starter Word if it is unplayable")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -175,7 +166,7 @@ class WordleCommands(commands.Cog):
             )
             return
 
-        thread = await self._find_thread(state.get("thread_id"))
+        thread = await find_thread(self.bot, state.get("thread_id"))
         if thread is None:
             await interaction.followup.send(
                 "❌ I can't find today's Challenge thread, so the Starter Word was not replaced.",
@@ -225,6 +216,30 @@ class WordleCommands(commands.Cog):
             f"✅ Starter Word replaced: {old_word} is now {new_word}.", ephemeral=True
         )
 
+    @app_commands.command(name="wordle_remind", description="Get pinged at 21:00 if you haven't posted your Result")
+    @app_commands.describe(setting="Turn your Reminder on or off for this server")
+    @app_commands.choices(
+        setting=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")]
+    )
+    @app_commands.guild_only()
+    async def remind(self, interaction: discord.Interaction, setting: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        if not reminders_enabled():
+            await interaction.followup.send("❌ Reminders are not enabled on this bot.", ephemeral=True)
+            return
+
+        opted_in = setting.value == "on"
+        await set_reminder_opt_in(interaction.guild.id, interaction.user.id, opted_in)
+
+        if opted_in:
+            message = (
+                f"🔔 You're opted in. If you haven't posted your Result in today's Challenge thread by "
+                f"{REMINDER_HOUR}:00 server time, I'll ping you there. Use `/wordle_remind off` to stop."
+            )
+        else:
+            message = "🔕 You're opted out of Reminders on this server."
+        await interaction.followup.send(message, ephemeral=True)
+
     @app_commands.command(name="wordle_status", description="Show this server's current Wordle configuration")
     @app_commands.guild_only()
     async def status(self, interaction: discord.Interaction):
@@ -251,6 +266,11 @@ class WordleCommands(commands.Cog):
             f"📝 Today's Starter Word: {current_word}" if current_word else "📝 Today's Starter Word: not posted yet",
             f"📚 Words used so far ({theme['display_name']}): {used_count}",
         ]
+        if reminders_enabled():
+            opted_in = len(entry.get("reminder_members", []))
+            lines.append(f"🔔 Reminders: on at {REMINDER_HOUR}:00, {opted_in} member(s) opted in")
+        else:
+            lines.append("🔕 Reminders: not enabled on this bot")
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 

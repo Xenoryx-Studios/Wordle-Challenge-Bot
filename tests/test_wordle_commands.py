@@ -385,3 +385,60 @@ async def test_wordle_replace_stays_in_todays_challenge_theme_after_a_theme_chan
     assert saved["used_words"]["halloween"] == ["GHOST", saved["word"]]
     assert saved["used_words"]["default"] == ["CRANE"]
     assert "christmas" not in saved["used_words"]
+
+
+# --- Reminders -------------------------------------------------------------
+
+async def _remind(guild_id, member_id, value):
+    from discord import app_commands
+
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=guild_id)
+    interaction.user.id = member_id
+    await cog.remind.callback(cog, interaction, app_commands.Choice(name=value, value=value))
+    return interaction.followup.send.await_args.args[0]
+
+
+async def test_wordle_remind_opts_in_and_out_per_server(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMINDERS", "1")
+
+    reply = await _remind(1, 42, "on")
+    await _remind(2, 42, "on")
+    assert "opted in" in reply
+    assert (await guild_config.get_guild_entry(1))["reminder_members"] == [42]
+
+    reply = await _remind(1, 42, "off")
+    assert "opted out" in reply
+    assert (await guild_config.get_guild_entry(1))["reminder_members"] == []
+    assert (await guild_config.get_guild_entry(2))["reminder_members"] == [42]  # other server untouched
+
+
+async def test_wordle_remind_says_when_reminders_are_not_enabled(monkeypatch):
+    monkeypatch.delenv("ENABLE_REMINDERS", raising=False)
+
+    reply = await _remind(1, 42, "on")
+
+    assert "not enabled" in reply
+    assert await guild_config.load_guild_config() == {}
+
+
+async def test_wordle_status_shows_reminders(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMINDERS", "1")
+    await guild_config.set_reminder_opt_in(1, 42, True)
+    await guild_config.set_reminder_opt_in(1, 43, True)
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=1)
+
+    await cog.status.callback(cog, interaction)
+
+    assert "Reminders: on at 21:00, 2 member(s) opted in" in interaction.followup.send.await_args.args[0]
+
+
+async def test_wordle_stop_keeps_reminder_opt_ins():
+    await guild_config.set_guild_channel(1, 123)
+    await guild_config.set_reminder_opt_in(1, 42, True)
+    cog = WordleCommands(MagicMock())
+
+    await cog.stop.callback(cog, _make_interaction(guild_id=1))
+
+    assert (await guild_config.get_guild_entry(1))["reminder_members"] == [42]

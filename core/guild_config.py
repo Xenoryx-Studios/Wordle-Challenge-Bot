@@ -63,6 +63,19 @@ async def set_guild_theme(guild_id, theme_name):
     await _update_guild(guild_id, lambda entry: entry.update(theme=theme_name))
 
 
+async def set_reminder_opt_in(guild_id, member_id, opted_in):
+    """Add or remove a member from the server's Reminder opt-ins."""
+    def mutate(entry):
+        members = set(entry.get("reminder_members", []))
+        if opted_in:
+            members.add(member_id)
+        else:
+            members.discard(member_id)
+        entry["reminder_members"] = sorted(members)
+
+    await _update_guild(guild_id, mutate)
+
+
 async def set_guild_timezone(guild_id, timezone):
     await _update_guild(guild_id, lambda entry: entry.update(timezone=timezone))
 

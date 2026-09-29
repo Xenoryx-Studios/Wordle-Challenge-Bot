@@ -6,7 +6,7 @@ These Terms of Service ("Terms") govern your use of the Wordle Challenge Bot ("t
 
 ## 1. Description of the Service
 
-The Bot posts a daily Wordle starter word to a designated channel in your Discord server, tracks previously used words to avoid repeats, and provides a small set of slash commands (`/wordle_start`, `/wordle_stop`, `/wordle_replace`, `/wordle_theme`, `/wordle_reset`, `/wordle_status`, `/wordle_help`) to configure and control that behavior.
+The Bot posts a daily Wordle starter word to a designated channel in your Discord server, tracks previously used words to avoid repeats, and provides a small set of slash commands (`/wordle_start`, `/wordle_stop`, `/wordle_replace`, `/wordle_theme`, `/wordle_reset`, `/wordle_status`, `/wordle_remind`, `/wordle_help`) to configure and control that behavior.
 
 ## 2. Open Source Software
 

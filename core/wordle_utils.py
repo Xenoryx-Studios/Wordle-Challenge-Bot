@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from datetime import datetime, timezone
 
 import discord
@@ -63,6 +64,29 @@ def theme_used_words(state, theme_name):
 
 def set_theme_used_words(state, theme_name, words):
     _used_words_by_theme(state)[theme_name] = words
+
+
+# The header of a Wordle share, e.g. "Wordle 1,234 4/6" or "Wordle 1.234 X/6*".
+_RESULT_PATTERN = re.compile(r"\bWordle\s+[\d,.]+\s+[1-6X]/6\*?", re.IGNORECASE)
+
+
+def is_result(text):
+    """Whether a message is a Wordle share. The puzzle number is not checked."""
+    return bool(_RESULT_PATTERN.search(text or ""))
+
+
+async def find_thread(bot, thread_id):
+    """The Challenge thread, or None if it is gone or cannot be seen."""
+    if thread_id is None:
+        return None
+    thread = bot.get_channel(thread_id)
+    if thread is not None:
+        return thread
+    try:
+        # Archived threads are not in the cache.
+        return await bot.fetch_channel(thread_id)
+    except discord.HTTPException:
+        return None
 
 
 def local_today(timezone_name):

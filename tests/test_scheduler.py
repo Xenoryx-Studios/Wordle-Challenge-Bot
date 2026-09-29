@@ -2,6 +2,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
+import pytest
+
 from cogs.scheduler import Scheduler
 from core import guild_config
 
@@ -195,3 +198,179 @@ async def test_theme_running_out_clears_only_its_own_used_words(word_list_file):
 
     state = await guild_config.get_guild_state(1)
     assert state["used_words"] == {"default": ["CRANE"], "halloween": ["GHOST"]}  # restarted with GHOST
+
+
+# --- Reminders ---------------------------------------------------------------
+
+THREAD_ID = 500
+MIDNIGHT = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+LEFT_MEMBER = 99
+
+
+def _message(author_id, content):
+    message = MagicMock()
+    message.author.id = author_id
+    message.content = content
+    return message
+
+
+def _make_thread(messages):
+    thread = MagicMock()
+    thread.send = AsyncMock()
+
+    def history(limit=None):
+        async def gen():
+            for message in messages:
+                yield message
+        return gen()
+
+    thread.history = MagicMock(side_effect=history)
+    return thread
+
+
+def _make_reminder_bot(thread):
+    bot = _make_bot({100: _make_channel(1), THREAD_ID: thread})
+    guild = MagicMock()
+
+    async def fetch_member(member_id):
+        if member_id == LEFT_MEMBER:
+            raise discord.NotFound(MagicMock(status=404), "unknown member")
+        return MagicMock(id=member_id)
+
+    guild.fetch_member = AsyncMock(side_effect=fetch_member)
+    bot.get_guild = MagicMock(return_value=guild)
+    bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(status=404), "gone"))
+    return bot
+
+
+async def _server_with_challenge(members, posted_at=MIDNIGHT, challenge_date="2026-01-01"):
+    await _start_server(1, 100, "UTC", {
+        "word": "CRANE",
+        "used_words": {"default": ["CRANE"]},
+        "challenge_date": challenge_date,
+        "post_id": discord.utils.time_snowflake(posted_at),
+        "thread_id": THREAD_ID,
+    })
+    for member in members:
+        await guild_config.set_reminder_opt_in(1, member, True)
+
+
+@pytest.fixture
+def reminders_on(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMINDERS", "1")
+
+
+async def test_reminder_mentions_only_opted_in_members_without_a_result(reminders_on):
+    await _server_with_challenge([1, 2, 3, 4, 5, 6, LEFT_MEMBER])
+    thread = _make_thread([
+        _message(1, "Wordle 1,234 4/6\n\n⬛🟨⬛⬛⬛\n🟩🟩🟩🟩🟩"),
+        _message(2, "Wordle 1.234 X/6*"),       # failed, hard mode, dot separator
+        _message(3, "wordle 987 1/6"),          # lower case, no separator
+        _message(4, "I'll play later"),          # not a Result
+        _message(7, "Wordle 1,234 3/6"),         # Result by someone not opted in
+        _message(5, "Wordle 1,234 7/6"),         # not a valid score
+    ])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_awaited_once()
+    text = thread.send.await_args.args[0]
+    assert "<@4>" in text and "<@5>" in text and "<@6>" in text
+    for member in (1, 2, 3, 7, LEFT_MEMBER):
+        assert f"<@{member}>" not in text
+    mentioned = {user.id for user in thread.send.await_args.kwargs["allowed_mentions"].users}
+    assert mentioned == {4, 5, 6}
+
+
+async def test_no_reminder_before_21_and_only_one_per_day(reminders_on):
+    await _server_with_challenge([4])
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 20, 59, tzinfo=timezone.utc))
+    thread.send.assert_not_awaited()
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 1, tzinfo=timezone.utc))
+    await _tick(scheduler, datetime(2026, 1, 1, 23, 0, tzinfo=timezone.utc))
+    thread.send.assert_awaited_once()
+
+
+async def test_late_reminder_when_the_bot_was_offline_at_21(reminders_on):
+    await _server_with_challenge([4])
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 22, 30, tzinfo=timezone.utc))
+
+    thread.send.assert_awaited_once()
+
+
+async def test_no_message_when_everyone_has_played(reminders_on):
+    await _server_with_challenge([1])
+    thread = _make_thread([_message(1, "Wordle 1,234 2/6")])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_not_awaited()
+    assert (await guild_config.get_guild_state(1))["reminder_date"] == "2026-01-01"
+
+
+async def test_no_reminder_when_challenge_posted_after_21(reminders_on):
+    await _server_with_challenge([4], posted_at=datetime(2026, 1, 1, 21, 30, tzinfo=timezone.utc))
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 22, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_not_awaited()
+
+
+async def test_no_reminder_without_a_challenge_today(reminders_on):
+    await _server_with_challenge([4], challenge_date="2026-01-01")
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+    scheduler._attempted = {"1": "2026-01-02"}  # today's post failed
+
+    await _tick(scheduler, datetime(2026, 1, 2, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_not_awaited()
+
+
+async def test_no_reminder_on_a_stopped_server(reminders_on):
+    await _server_with_challenge([4])
+    await guild_config.stop_guild(1)
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_not_awaited()
+
+
+async def test_no_reminder_when_reminders_are_not_enabled(monkeypatch):
+    monkeypatch.delenv("ENABLE_REMINDERS", raising=False)
+    await _server_with_challenge([4])
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_not_awaited()
+
+
+async def test_missing_thread_in_one_server_does_not_block_another(reminders_on):
+    await _server_with_challenge([4])  # server 1: thread 500 exists
+    await _start_server(2, 200, "UTC", {
+        "word": "CRANE", "used_words": {}, "challenge_date": "2026-01-01",
+        "post_id": discord.utils.time_snowflake(MIDNIGHT), "thread_id": 404,  # gone
+    })
+    await guild_config.set_reminder_opt_in(2, 4, True)
+    thread = _make_thread([])
+    scheduler = _make_scheduler(_make_reminder_bot(thread))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc))
+
+    thread.send.assert_awaited_once()

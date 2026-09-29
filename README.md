@@ -7,6 +7,7 @@ A Discord bot that posts daily Wordle challenges to your server.
 - Seasonal Themes (Halloween, Christmas) that a server admin can switch on.
 - Posts Wordle rules and creates a dedicated thread for each challenge.
 - One command to start daily Challenges in a channel, in your server's timezone.
+- Optional Reminders: members can opt in to a 21:00 ping if they haven't posted their Result yet (see [Enabling Reminders](#enabling-reminders)).
 
 # Challenge Rules
 
@@ -20,7 +21,7 @@ Have fun!
 
 # Commands
 
-All commands except `/wordle_help` require the **Manage Server** permission and can only be used in a server (not DMs).
+All commands except `/wordle_help`, `/wordle_status` and `/wordle_remind` require the **Manage Server** permission. All commands except `/wordle_help` can only be used in a server (not DMs).
 
 `/wordle_start`: Start daily Wordle Challenges in the channel where you run it.
 
@@ -48,6 +49,8 @@ Each Theme keeps its own used-words history, so a short seasonal list running ou
 
 `/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), the current Theme, today's Starter Word, and how many of the current Theme's words have been used so far.
 
+`/wordle_remind on|off`: Opt in to (or out of) Reminders on this server. Available to everyone. At 21:00 in the server's timezone, three hours before the Wordle resets, the bot posts one message in today's Challenge thread mentioning every opted-in member who hasn't posted their Result there yet. Your choice lasts until you change it, including while the server is stopped. Only works when the bot's host has [enabled Reminders](#enabling-reminders).
+
 `/wordle_help`: Post the Wordle Challenge rules. Available to everyone, no permission required.
 
 # Running the Bot
@@ -69,7 +72,18 @@ make logs
 make stop
 ```
 
-`make run` mounts `./data` into the container so word lists and per-server state persist across restarts. The real `data/guild_config.json` is created automatically on first run and is gitignored — `data/guild_config.example.json` is the committed template.
+`make run` mounts `./data` into the container so word lists and per-server state persist across restarts. The real `data/guild_config.json` is created automatically on first run and is gitignored: `data/guild_config.example.json` is the committed template.
+
+## Enabling Reminders
+
+Reminders are off by default. To find out who has posted their Result, the bot reads the messages in each day's Challenge thread (and nowhere else), which needs Discord's privileged **Message Content** intent. See `docs/adr/0001-detect-results-via-message-content.md` for why.
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), open your application, go to **Bot**, and turn on **Message Content Intent**. Bots in 100 or more servers need Discord's approval for this.
+2. Set `ENABLE_REMINDERS=1` when starting the bot:
+   - Locally: `export ENABLE_REMINDERS=1` before `python bot.py`.
+   - Docker: `make run TOKEN=your-bot-token ENABLE_REMINDERS=1`, or pass `-e ENABLE_REMINDERS=1` to `docker run`.
+
+Without the setting, the bot does not request the intent, so it connects even if the portal toggle is off, and `/wordle_remind` replies that Reminders are not enabled. Do not set it unless the portal toggle is on: Discord refuses the connection if the bot asks for an intent it has not been granted.
 
 # Development
 
