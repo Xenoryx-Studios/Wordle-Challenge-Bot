@@ -110,6 +110,43 @@ async def test_wordle_start_does_not_post_a_second_challenge_today():
     assert "already posted" in interaction.followup.send.await_args.args[0]
 
 
+async def test_wordle_start_again_in_the_same_channel_posts_no_rules():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.set_guild_timezone(42, "UTC")
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE"], "challenge_date": local_today("UTC")})
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "America/Toronto")
+
+    interaction.channel.send.assert_not_awaited()  # no rules, no second Challenge
+    entry = await guild_config.get_guild_entry(42)
+    assert entry["timezone"] == "America/Toronto"
+
+
+async def test_wordle_start_in_a_new_channel_posts_the_rules_there():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE"], "challenge_date": local_today("UTC")})
+    interaction = _make_interaction(guild_id=42, channel_id=8)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
+
+    assert interaction.channel.send.await_args_list[0].args[0] == RULES_MESSAGE
+    interaction.channel.send.return_value.pin.assert_awaited_once()
+
+
+async def test_wordle_start_after_stop_posts_the_rules_again():
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.stop_guild(42)
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
+
+    assert interaction.channel.send.await_args_list[0].args[0] == RULES_MESSAGE
+
+
 async def test_old_setup_commands_are_gone():
     names = {command.name for command in WordleCommands(MagicMock()).get_app_commands()}
     assert "wordle_start" in names
@@ -138,7 +175,14 @@ def _make_replace_setup(guild_id=1, challenge_today=True, thread_found=True, thr
     thread = MagicMock()
     thread.send = AsyncMock(side_effect=thread_send_exc)
     post = MagicMock()
-    post.edit = AsyncMock(side_effect=edit_exc)
+    post.content = "Today's Wordle starter is **CRANE**!"
+
+    async def edit(content):
+        if edit_exc is not None:
+            raise edit_exc
+        post.content = content
+
+    post.edit = AsyncMock(side_effect=edit)
     thread.parent.fetch_message = AsyncMock(return_value=post)
 
     bot = MagicMock()
@@ -183,6 +227,22 @@ async def test_wordle_replace_posts_new_word_in_the_existing_thread():
     assert saved["used_words"] == {"default": ["SLATE", "CRANE", new_word]}
     assert (saved["thread_id"], saved["post_id"], saved["challenge_date"]) == (500, 500, state["challenge_date"])
     assert "replaced" in reply.lower()
+
+
+async def test_two_replacements_keep_the_original_starter_word_struck_out():
+    bot, thread, post, state = _make_replace_setup()
+    cog = WordleCommands(bot)
+
+    _, saved = await _run_replace(bot, state)
+    first_replacement = saved["word"]
+    await cog.replace.callback(cog, _make_interaction(guild_id=1))
+    saved = await guild_config.get_guild_state(1)
+
+    lines = post.content.split("\n")
+    assert lines[0] == "~~Today's Wordle starter is **CRANE**!~~"
+    assert saved["word"] in lines[1] and first_replacement not in lines[1]
+    assert thread.send.await_count == 2
+    assert f"replaces {first_replacement}" in thread.send.await_args.args[0]
 
 
 async def test_wordle_replace_finds_archived_thread_via_fetch():
@@ -431,7 +491,7 @@ async def test_wordle_status_shows_reminders(monkeypatch):
 
     await cog.status.callback(cog, interaction)
 
-    assert "Reminders: on at 21:00, 2 member(s) opted in" in interaction.followup.send.await_args.args[0]
+    assert "Reminders: on at 21:00 UTC, 2 member(s) opted in" in interaction.followup.send.await_args.args[0]
 
 
 async def test_wordle_stop_keeps_reminder_opt_ins():

@@ -28,7 +28,7 @@ All commands except `/wordle_help`, `/wordle_status` and `/wordle_remind` requir
 parameters:
 - timezone: IANA timezone name (e.g., `America/Toronto`). See the [list of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for accepted values: use the value from the "TZ identifier" column.
 
-- Posts the Wordle rules and pins the message.
+- Posts the Wordle rules and pins the message, the first time and whenever the channel changes or a stopped server restarts. Running it again in the same channel does not repost them.
 - Posts today's Challenge straight away, unless today's Challenge was already posted.
 - From then on, posts a new Challenge every day at 00:00 in that timezone, when the new Wordle puzzle unlocks. If the bot was offline at 00:00, it posts as soon as it is back online. A server never gets more than one Challenge per day.
 - Running it again moves the Challenge to the current channel and timezone from the next day, and restarts a stopped server. Used words are kept.
