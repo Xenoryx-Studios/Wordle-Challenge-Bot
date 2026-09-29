@@ -44,10 +44,11 @@ async def pick_word(theme_file, used_words=None):
     return word, used_words
 
 async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
+    """Post a Challenge. Returns True once the Challenge post was sent."""
     channel = bot.get_channel(channel_id)
     if not channel:
         logger.error(f"Channel {channel_id} not found")
-        return
+        return False
 
     used = state.get("used_words", []) if state is not None else []
     try:
@@ -58,7 +59,7 @@ async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
             "⚠️ Couldn't load today's Wordle word — the word list may be missing or empty. "
             "Please contact a server admin."
         )
-        return
+        return False
     if state is not None:
         state["word"] = word
         state["used_words"] = used
@@ -71,8 +72,14 @@ async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
     except pytz.exceptions.UnknownTimeZoneError:
         logger.warning(f"Unknown timezone '{timezone_name}', falling back to UTC for thread date")
         tz = timezone.utc
-    date_str = datetime.now(tz).strftime("%b %d")
+    now_local = datetime.now(tz)
+    date_str = now_local.strftime("%b %d")
     msg = await channel.send(theme["message"].format(word=word))
+    if state is not None:
+        # The Challenge date (in the server's timezone) is what makes a
+        # server get at most one Challenge per day.
+        state["post_id"] = msg.id
+        state["challenge_date"] = now_local.date().isoformat()
 
     try:
         thread = await msg.create_thread(
@@ -81,7 +88,10 @@ async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
         )
         if state is not None:
             state["thread_id"] = thread.id
-            await set_guild_state(channel.guild.id, state)
         logger.info(f"Thread created {thread.id} for word '{word}'")
     except discord.HTTPException as e:
         logger.warning(f"Cannot create thread: {e}")
+
+    if state is not None:
+        await set_guild_state(channel.guild.id, state)
+    return True
