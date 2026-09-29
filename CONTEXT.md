@@ -5,7 +5,7 @@ A Discord bot that gives a server a shared Starter Word each day, so every membe
 ## Language
 
 **Challenge**:
-One day's Wordle played by a server's members, all opening with the same Starter Word. The day follows the server's timezone, which a Server Admin chooses, and each day's Challenge posts at 00:00 in that timezone, when the new Wordle puzzle unlocks. Each Challenge has exactly one thread, where members post their Results.
+One day's Wordle played by a server's members, all opening with the same Starter Word. The day follows the server's timezone, which a Server Admin chooses, and each day's Challenge posts at 00:00 in that timezone, when the new Wordle puzzle unlocks, or as soon as the bot is back online if it missed 00:00. A server never gets more than one Challenge per day. Each Challenge has exactly one thread, where members post their Results.
 
 **Starter Word**:
 The word every member of a server uses as their first guess in a Challenge. It must be a guess accepted by the NYT Wordle.
