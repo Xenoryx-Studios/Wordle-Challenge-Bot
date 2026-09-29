@@ -175,7 +175,14 @@ def _make_replace_setup(guild_id=1, challenge_today=True, thread_found=True, thr
     thread = MagicMock()
     thread.send = AsyncMock(side_effect=thread_send_exc)
     post = MagicMock()
-    post.edit = AsyncMock(side_effect=edit_exc)
+    post.content = "Today's Wordle starter is **CRANE**!"
+
+    async def edit(content):
+        if edit_exc is not None:
+            raise edit_exc
+        post.content = content
+
+    post.edit = AsyncMock(side_effect=edit)
     thread.parent.fetch_message = AsyncMock(return_value=post)
 
     bot = MagicMock()
@@ -220,6 +227,22 @@ async def test_wordle_replace_posts_new_word_in_the_existing_thread():
     assert saved["used_words"] == {"default": ["SLATE", "CRANE", new_word]}
     assert (saved["thread_id"], saved["post_id"], saved["challenge_date"]) == (500, 500, state["challenge_date"])
     assert "replaced" in reply.lower()
+
+
+async def test_two_replacements_keep_the_original_starter_word_struck_out():
+    bot, thread, post, state = _make_replace_setup()
+    cog = WordleCommands(bot)
+
+    _, saved = await _run_replace(bot, state)
+    first_replacement = saved["word"]
+    await cog.replace.callback(cog, _make_interaction(guild_id=1))
+    saved = await guild_config.get_guild_state(1)
+
+    lines = post.content.split("\n")
+    assert lines[0] == "~~Today's Wordle starter is **CRANE**!~~"
+    assert saved["word"] in lines[1] and first_replacement not in lines[1]
+    assert thread.send.await_count == 2
+    assert f"replaces {first_replacement}" in thread.send.await_args.args[0]
 
 
 async def test_wordle_replace_finds_archived_thread_via_fetch():

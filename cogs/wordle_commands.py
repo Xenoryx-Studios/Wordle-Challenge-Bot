@@ -209,10 +209,13 @@ class WordleCommands(commands.Cog):
 
         try:
             post = await thread.parent.fetch_message(state["post_id"])
-            await post.edit(
-                content=f"~~{theme['message'].format(word=old_word)}~~\n"
-                f"🔁 Replaced: today's Starter Word is **{new_word}**."
-            )
+            # Keep the original post struck out, even after several
+            # Replacements: only the "Replaced" line changes.
+            if post.content.startswith("~~"):
+                original = post.content.split("\n", 1)[0]
+            else:
+                original = f"~~{post.content}~~"
+            await post.edit(content=f"{original}\n🔁 Replaced: today's Starter Word is **{new_word}**.")
         except (discord.HTTPException, KeyError, AttributeError):
             logger.warning(f"Could not edit the Challenge post for guild {guild_id}", exc_info=True)
 
