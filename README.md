@@ -33,7 +33,7 @@ parameters:
 
 `/wordle_stop`: Stop daily Challenges for this server. Used words are kept, so running `/wordle_start` again picks up where you left off.
 
-`/wordle_skip`: Post a new Wordle word right now, in the current channel, without reposting the rules or creating a new pinned message.
+`/wordle_replace`: Replace today's Starter Word when it can't be played (not accepted by Wordle, offensive, or too obscure). Works from any channel. The new Starter Word is posted in today's Challenge thread and the original Challenge post is edited to show it was replaced; results already posted in the thread still count. Both words stay in the used-words history.
 
 `/wordle_reset`: Clear the used-words history so previously used words can be picked again. Leaves today's already-posted word untouched.
 

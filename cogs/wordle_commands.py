@@ -1,3 +1,4 @@
+import json
 import logging
 
 import discord
@@ -8,14 +9,13 @@ from discord.ext import commands
 from core.guild_config import (
     get_guild_entry,
     get_guild_state,
-    get_guild_timezone,
     set_guild_channel,
     set_guild_state,
     set_guild_timezone,
     stop_guild,
 )
 from core.themes import THEMES
-from core.wordle_utils import challenge_posted_today, post_word
+from core.wordle_utils import challenge_posted_today, pick_word, post_word
 
 logger = logging.getLogger("wordle-bot")
 
@@ -117,30 +117,79 @@ class WordleCommands(commands.Cog):
             ephemeral=True,
         )
 
-    @app_commands.command(name="wordle_skip", description="Post a new Wordle word right now, without reposting the rules")
+    async def _find_thread(self, thread_id):
+        if thread_id is None:
+            return None
+        thread = self.bot.get_channel(thread_id)
+        if thread is not None:
+            return thread
+        try:
+            # Archived threads are not in the cache.
+            return await self.bot.fetch_channel(thread_id)
+        except discord.HTTPException:
+            return None
+
+    @app_commands.command(name="wordle_replace", description="Replace today's Starter Word if it is unplayable")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def skip(self, interaction: discord.Interaction):
+    async def replace(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         guild_id = interaction.guild.id
-        channel_id = interaction.channel.id
-        logger.info(f"/wordle_skip invoked by guild {guild_id}")
+        logger.info(f"/wordle_replace invoked by guild {guild_id}")
 
-        permissions = interaction.channel.permissions_for(interaction.guild.me)
-        if not permissions.send_messages:
+        entry = await get_guild_entry(guild_id)
+        state = entry.get("state", {})
+        if not challenge_posted_today(state, entry.get("timezone", "UTC")):
             await interaction.followup.send(
-                "❌ I don't have permission to send messages in this channel. "
-                "Please grant me Send Messages here and try again.",
+                "❌ There is no Challenge today, so there is no Starter Word to replace.", ephemeral=True
+            )
+            return
+
+        thread = await self._find_thread(state.get("thread_id"))
+        if thread is None:
+            await interaction.followup.send(
+                "❌ I can't find today's Challenge thread, so the Starter Word was not replaced.",
                 ephemeral=True,
             )
             return
 
-        state = await get_guild_state(guild_id)
         theme = THEMES.get("default")
-        timezone_name = await get_guild_timezone(guild_id)
-        await post_word(self.bot, channel_id, theme, state, timezone_name=timezone_name)
+        old_word = state.get("word")
+        try:
+            new_word, used = await pick_word(theme["file"], used_words=list(state.get("used_words", [])))
+        except (ValueError, FileNotFoundError, json.JSONDecodeError):
+            logger.exception(f"Failed to pick a replacement word for guild {guild_id}")
+            await interaction.followup.send(
+                "❌ Couldn't load the word list, so the Starter Word was not replaced.", ephemeral=True
+            )
+            return
 
-        await interaction.followup.send("✅ New Wordle word posted!", ephemeral=True)
+        try:
+            await thread.send(f"🔁 Replacement: today's Starter Word is now **{new_word}** (replaces {old_word}).")
+        except discord.HTTPException:
+            await interaction.followup.send(
+                "❌ I can't post in today's Challenge thread, so the Starter Word was not replaced.",
+                ephemeral=True,
+            )
+            return
+
+        # The Replacement counts from here: the same Challenge, a new Starter Word.
+        state["word"] = new_word
+        state["used_words"] = used
+        await set_guild_state(guild_id, state)
+
+        try:
+            post = await thread.parent.fetch_message(state["post_id"])
+            await post.edit(
+                content=f"~~{theme['message'].format(word=old_word)}~~\n"
+                f"🔁 Replaced: today's Starter Word is **{new_word}**."
+            )
+        except (discord.HTTPException, KeyError, AttributeError):
+            logger.warning(f"Could not edit the Challenge post for guild {guild_id}", exc_info=True)
+
+        await interaction.followup.send(
+            f"✅ Starter Word replaced: {old_word} is now {new_word}.", ephemeral=True
+        )
 
     @app_commands.command(name="wordle_status", description="Show this server's current Wordle configuration")
     @app_commands.guild_only()

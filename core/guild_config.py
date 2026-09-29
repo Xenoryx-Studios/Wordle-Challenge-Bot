@@ -37,12 +37,6 @@ async def get_guild_state(guild_id):
         return config.get(str(guild_id), {}).get("state", {})
 
 
-async def get_guild_timezone(guild_id):
-    async with _lock:
-        config = await asyncio.to_thread(_read_config_sync)
-        return config.get(str(guild_id), {}).get("timezone", "UTC")
-
-
 async def get_guild_entry(guild_id):
     async with _lock:
         config = await asyncio.to_thread(_read_config_sync)
