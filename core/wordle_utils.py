@@ -8,6 +8,7 @@ import discord
 import pytz
 
 from core.guild_config import set_guild_state
+from core.themes import DEFAULT_THEME
 
 logger = logging.getLogger("wordle-bot")
 
@@ -43,6 +44,27 @@ async def pick_word(theme_file, used_words=None):
     used_words.append(word)
     return word, used_words
 
+def _used_words_by_theme(state):
+    used = state.get("used_words")
+    if isinstance(used, list):
+        # Before Themes, a server had one Used Words list; it belongs to
+        # the default Theme.
+        used = {DEFAULT_THEME: used}
+    elif not isinstance(used, dict):
+        used = {}
+    state["used_words"] = used
+    return used
+
+
+def theme_used_words(state, theme_name):
+    """A copy of the Used Words for one Theme."""
+    return list(_used_words_by_theme(state).get(theme_name, []))
+
+
+def set_theme_used_words(state, theme_name, words):
+    _used_words_by_theme(state)[theme_name] = words
+
+
 def local_today(timezone_name):
     """Today's date (ISO string) in the given timezone, or UTC if unknown."""
     try:
@@ -63,7 +85,8 @@ async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
         logger.error(f"Channel {channel_id} not found")
         return False
 
-    used = state.get("used_words", []) if state is not None else []
+    theme_name = theme.get("name", DEFAULT_THEME)
+    used = theme_used_words(state, theme_name) if state is not None else []
     try:
         word, used = await pick_word(theme["file"], used_words=used)
     except (ValueError, FileNotFoundError, json.JSONDecodeError) as e:
@@ -75,7 +98,8 @@ async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
         return False
     if state is not None:
         state["word"] = word
-        state["used_words"] = used
+        state["theme"] = theme_name
+        set_theme_used_words(state, theme_name, used)
         await set_guild_state(channel.guild.id, state)
 
     logger.info(f"Posting word '{word}' in channel {channel_id}")

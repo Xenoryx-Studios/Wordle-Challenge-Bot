@@ -8,14 +8,20 @@ from discord.ext import commands
 
 from core.guild_config import (
     get_guild_entry,
-    get_guild_state,
     set_guild_channel,
     set_guild_state,
+    set_guild_theme,
     set_guild_timezone,
     stop_guild,
 )
-from core.themes import THEMES
-from core.wordle_utils import challenge_posted_today, pick_word, post_word
+from core.themes import DEFAULT_THEME, available_themes, get_theme
+from core.wordle_utils import (
+    challenge_posted_today,
+    pick_word,
+    post_word,
+    set_theme_used_words,
+    theme_used_words,
+)
 
 logger = logging.getLogger("wordle-bot")
 
@@ -82,7 +88,8 @@ class WordleCommands(commands.Cog):
 
         # Existing state (Used Words in particular) is kept, so restarting a
         # Stopped server does not reopen old Starter Words.
-        state = await get_guild_state(guild_id)
+        entry = await get_guild_entry(guild_id)
+        state = entry.get("state", {})
         started = f"✅ Wordle Challenge started in <#{channel_id}>. A new Challenge posts daily at 00:00 {timezone}."
         if challenge_posted_today(state, timezone):
             await interaction.followup.send(
@@ -91,7 +98,7 @@ class WordleCommands(commands.Cog):
             )
             return
 
-        theme = THEMES.get("default")
+        theme = get_theme(entry.get("theme"))
         if await post_word(self.bot, channel_id, theme, state, timezone_name=timezone):
             await interaction.followup.send(f"{started} Today's Challenge is up!", ephemeral=True)
         else:
@@ -100,7 +107,27 @@ class WordleCommands(commands.Cog):
                 ephemeral=True,
             )
 
-    @app_commands.command(name="wordle_reset", description="Reset the used-words history so old words can be picked again")
+    @app_commands.command(name="wordle_theme", description="Choose the Theme for this server's Challenges")
+    @app_commands.describe(theme="The Theme to use from the next Challenge")
+    @app_commands.choices(
+        theme=[app_commands.Choice(name=t["display_name"], value=t["name"]) for t in available_themes()]
+    )
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def theme(self, interaction: discord.Interaction, theme: app_commands.Choice[str]):
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild.id
+        logger.info(f"/wordle_theme invoked by guild {guild_id}: {theme.value}")
+
+        # Today's Challenge is left alone: the Theme applies from the next one.
+        await set_guild_theme(guild_id, theme.value)
+
+        await interaction.followup.send(
+            f"✅ Theme set to {get_theme(theme.value)['display_name']}. It starts with the next Challenge.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="wordle_reset", description="Reset the current Theme's used words so they can be picked again")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_guild=True)
     async def reset(self, interaction: discord.Interaction):
@@ -108,12 +135,15 @@ class WordleCommands(commands.Cog):
         guild_id = interaction.guild.id
         logger.info(f"/wordle_reset invoked by guild {guild_id}")
 
-        state = await get_guild_state(guild_id)
-        state["used_words"] = []
+        entry = await get_guild_entry(guild_id)
+        theme = get_theme(entry.get("theme"))
+        state = entry.get("state", {})
+        set_theme_used_words(state, theme["name"], [])
         await set_guild_state(guild_id, state)
 
         await interaction.followup.send(
-            "✅ Used-words history has been reset. Previously used words can be picked again.",
+            f"✅ Used words for the {theme['display_name']} Theme have been reset. "
+            "Its previously used words can be picked again.",
             ephemeral=True,
         )
 
@@ -153,10 +183,14 @@ class WordleCommands(commands.Cog):
             )
             return
 
-        theme = THEMES.get("default")
+        # A Replacement stays in the Theme today's Challenge was posted with,
+        # even if a Server Admin has picked a different Theme since.
+        theme = get_theme(state.get("theme", DEFAULT_THEME))
         old_word = state.get("word")
         try:
-            new_word, used = await pick_word(theme["file"], used_words=list(state.get("used_words", [])))
+            new_word, used = await pick_word(
+                theme["file"], used_words=theme_used_words(state, theme["name"])
+            )
         except (ValueError, FileNotFoundError, json.JSONDecodeError):
             logger.exception(f"Failed to pick a replacement word for guild {guild_id}")
             await interaction.followup.send(
@@ -175,7 +209,7 @@ class WordleCommands(commands.Cog):
 
         # The Replacement counts from here: the same Challenge, a new Starter Word.
         state["word"] = new_word
-        state["used_words"] = used
+        set_theme_used_words(state, theme["name"], used)
         await set_guild_state(guild_id, state)
 
         try:
@@ -201,8 +235,9 @@ class WordleCommands(commands.Cog):
         channel_id = entry.get("channel_id")
         tz_name = entry.get("timezone", "UTC")
         state = entry.get("state", {})
+        theme = get_theme(entry.get("theme"))
         current_word = state.get("word") if challenge_posted_today(state, tz_name) else None
-        used_count = len(state.get("used_words", []))
+        used_count = len(theme_used_words(state, theme["name"]))
 
         if channel_id:
             lines = [
@@ -212,8 +247,9 @@ class WordleCommands(commands.Cog):
         else:
             lines = ["⏸️ Stopped: no daily Challenges (use /wordle_start to start)"]
         lines += [
+            f"🎨 Theme: {theme['display_name']}",
             f"📝 Today's Starter Word: {current_word}" if current_word else "📝 Today's Starter Word: not posted yet",
-            f"📚 Words used so far: {used_count}",
+            f"📚 Words used so far ({theme['display_name']}): {used_count}",
         ]
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)

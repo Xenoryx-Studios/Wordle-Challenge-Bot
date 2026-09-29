@@ -59,6 +59,10 @@ async def set_guild_channel(guild_id, channel_id):
     await _update_guild(guild_id, lambda entry: entry.update(channel_id=channel_id))
 
 
+async def set_guild_theme(guild_id, theme_name):
+    await _update_guild(guild_id, lambda entry: entry.update(theme=theme_name))
+
+
 async def set_guild_timezone(guild_id, timezone):
     await _update_guild(guild_id, lambda entry: entry.update(timezone=timezone))
 

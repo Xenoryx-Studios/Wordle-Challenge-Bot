@@ -114,7 +114,7 @@ async def test_server_without_challenge_date_waits_for_midnight():
     channel.send.assert_awaited_once()
     state = await guild_config.get_guild_state(1)
     assert state["challenge_date"] == "2026-01-02"
-    assert "CRANE" in state["used_words"]  # history kept
+    assert "CRANE" in state["used_words"]["default"]  # legacy history kept as the default Theme's
 
 
 async def test_stopped_server_gets_no_challenge():
@@ -134,9 +134,9 @@ async def test_failed_post_is_not_retried_every_tick(word_list_file):
     await _start_server(1, 100, "UTC", {"used_words": [], "challenge_date": "2025-12-31"})
     channel = _make_channel(1)
     scheduler = _make_scheduler(_make_bot({100: channel}))
-    broken_theme = {"file": word_list_file([]), "message": "{word}", "thread_name": "{date}"}
+    broken_theme = {"name": "default", "file": word_list_file([]), "message": "{word}", "thread_name": "{date}"}
 
-    with patch.dict("cogs.scheduler.THEMES", {"default": broken_theme}):
+    with patch.dict("core.themes.THEMES", {"default": broken_theme}):
         await _tick(scheduler, datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc))
         await _tick(scheduler, datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc))
 
@@ -162,3 +162,36 @@ async def test_bad_timezone_does_not_stop_other_guilds():
     channel.send.assert_awaited_once()
     state = await guild_config.get_guild_state(2)
     assert state["word"] is not None
+
+
+async def test_next_challenge_uses_the_selected_theme():
+    await _start_server(1, 100, "UTC", {"used_words": {"default": ["CRANE"]}, "challenge_date": "2025-12-31"})
+    await guild_config.set_guild_theme(1, "halloween")
+    channel = _make_channel(1)
+    scheduler = _make_scheduler(_make_bot({100: channel}))
+
+    await _tick(scheduler, datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc))
+
+    state = await guild_config.get_guild_state(1)
+    assert state["theme"] == "halloween"
+    assert "Halloween" in channel.send.await_args.args[0]
+    assert "Halloween" in channel.send.return_value.create_thread.await_args.kwargs["name"]
+    assert state["used_words"]["halloween"] == [state["word"]]
+    assert state["used_words"]["default"] == ["CRANE"]  # other Themes untouched
+
+
+async def test_theme_running_out_clears_only_its_own_used_words(word_list_file):
+    tiny = {"name": "halloween", "display_name": "Halloween", "file": word_list_file(["ghost"]),
+            "message": "{word}", "thread_name": "{date}"}
+    await _start_server(1, 100, "UTC", {
+        "used_words": {"default": ["CRANE"], "halloween": ["GHOST"]}, "challenge_date": "2025-12-31",
+    })
+    await guild_config.set_guild_theme(1, "halloween")
+    channel = _make_channel(1)
+    scheduler = _make_scheduler(_make_bot({100: channel}))
+
+    with patch.dict("core.themes.THEMES", {"halloween": tiny}):
+        await _tick(scheduler, datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc))
+
+    state = await guild_config.get_guild_state(1)
+    assert state["used_words"] == {"default": ["CRANE"], "halloween": ["GHOST"]}  # restarted with GHOST

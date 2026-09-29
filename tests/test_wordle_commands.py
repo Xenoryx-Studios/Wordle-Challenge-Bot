@@ -4,7 +4,8 @@ import discord
 
 from cogs.wordle_commands import RULES_MESSAGE, WordleCommands
 from core import guild_config
-from core.wordle_utils import local_today
+from core.themes import get_theme
+from core.wordle_utils import _get_words, local_today
 
 
 def _make_interaction(guild_id=1, channel_id=2, can_send=True):
@@ -87,8 +88,9 @@ async def test_wordle_start_restarts_stopped_server_and_keeps_used_words():
     await cog.start.callback(cog, interaction, "UTC")
 
     state = await guild_config.get_guild_state(42)
-    assert state["used_words"][:2] == ["CRANE", "SLATE"]
-    assert len(state["used_words"]) == 3  # today's new Starter Word added
+    used = state["used_words"]["default"]
+    assert used[:2] == ["CRANE", "SLATE"]
+    assert len(used) == 3  # today's new Starter Word added
     assert state["word"] not in {"CRANE", "SLATE"}
 
 
@@ -124,7 +126,7 @@ async def test_wordle_reset_clears_used_words_but_keeps_current_word():
     await cog.reset.callback(cog, interaction)
 
     state = await guild_config.get_guild_state(1)
-    assert state["used_words"] == []
+    assert state["used_words"] == {"default": []}
     assert state["word"] == "CRANE"  # untouched
     assert state["thread_id"] == 55  # untouched
     interaction.followup.send.assert_awaited_once()
@@ -178,7 +180,7 @@ async def test_wordle_replace_posts_new_word_in_the_existing_thread():
     thread.parent.fetch_message.assert_awaited_once_with(500)
     edited = post.edit.await_args.kwargs["content"]
     assert "~~" in edited and new_word in edited
-    assert saved["used_words"] == ["SLATE", "CRANE", new_word]
+    assert saved["used_words"] == {"default": ["SLATE", "CRANE", new_word]}
     assert (saved["thread_id"], saved["post_id"], saved["challenge_date"]) == (500, 500, state["challenge_date"])
     assert "replaced" in reply.lower()
 
@@ -274,7 +276,8 @@ async def test_wordle_status_reports_configured_server():
     assert "00:00 America/Toronto" in report
     assert "Stopped" not in report
     assert "CRANE" in report
-    assert "Words used so far: 2" in report
+    assert "Theme: Default" in report
+    assert "Words used so far (Default): 2" in report
 
 
 async def test_wordle_stop_clears_schedule_but_keeps_word_history():
@@ -303,3 +306,82 @@ async def test_wordle_help_sends_rules_publicly():
     await cog.show_help.callback(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once_with(RULES_MESSAGE)
+
+
+# --- Themes ---------------------------------------------------------------
+
+async def test_wordle_theme_saves_selection_and_leaves_todays_challenge_alone():
+    from discord import app_commands
+
+    today_state = {"word": "CRANE", "used_words": {"default": ["CRANE"]}, "theme": "default",
+                   "challenge_date": local_today("UTC")}
+    await guild_config.set_guild_channel(1, 7)
+    await guild_config.set_guild_state(1, today_state)
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=1)
+
+    await cog.theme.callback(cog, interaction, app_commands.Choice(name="Halloween", value="halloween"))
+
+    entry = await guild_config.get_guild_entry(1)
+    assert entry["theme"] == "halloween"
+    assert entry["state"] == today_state
+    interaction.channel.send.assert_not_awaited()
+    assert "next Challenge" in interaction.followup.send.await_args.args[0]
+
+
+async def test_wordle_theme_works_on_a_stopped_server():
+    from discord import app_commands
+
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=1)
+
+    await cog.theme.callback(cog, interaction, app_commands.Choice(name="Christmas", value="christmas"))
+
+    assert (await guild_config.get_guild_entry(1)) == {"theme": "christmas"}
+
+
+async def test_wordle_theme_dropdown_lists_every_theme_with_words():
+    command = next(c for c in WordleCommands(MagicMock()).get_app_commands() if c.name == "wordle_theme")
+    values = {choice.value for choice in command.parameters[0].choices}
+    assert values == {"default", "halloween", "christmas"}
+
+
+async def test_wordle_reset_clears_only_the_current_themes_used_words():
+    await guild_config.set_guild_theme(1, "halloween")
+    await guild_config.set_guild_state(1, {"used_words": {"default": ["CRANE"], "halloween": ["GHOST", "WITCH"]}})
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=1)
+
+    await cog.reset.callback(cog, interaction)
+
+    state = await guild_config.get_guild_state(1)
+    assert state["used_words"] == {"default": ["CRANE"], "halloween": []}
+    assert "Halloween" in interaction.followup.send.await_args.args[0]
+
+
+async def test_wordle_status_shows_theme_and_its_used_words_count():
+    await guild_config.set_guild_channel(1, 123)
+    await guild_config.set_guild_theme(1, "halloween")
+    await guild_config.set_guild_state(1, {"used_words": {"default": ["A", "B", "C"], "halloween": ["GHOST"]}})
+    cog = WordleCommands(MagicMock())
+    interaction = _make_interaction(guild_id=1)
+
+    await cog.status.callback(cog, interaction)
+
+    report = interaction.followup.send.await_args.args[0]
+    assert "Theme: Halloween" in report
+    assert "Words used so far (Halloween): 1" in report
+
+
+async def test_wordle_replace_stays_in_todays_challenge_theme_after_a_theme_change():
+    bot, _, _, state = _make_replace_setup()
+    state.update(word="GHOST", theme="halloween", used_words={"halloween": ["GHOST"], "default": ["CRANE"]})
+    await guild_config.set_guild_theme(1, "christmas")  # changed mid-day
+
+    _, saved = await _run_replace(bot, state)
+
+    halloween_words = await _get_words(get_theme("halloween")["file"])
+    assert saved["word"] in halloween_words
+    assert saved["used_words"]["halloween"] == ["GHOST", saved["word"]]
+    assert saved["used_words"]["default"] == ["CRANE"]
+    assert "christmas" not in saved["used_words"]

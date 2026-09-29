@@ -6,7 +6,7 @@ import pytz
 from discord.ext import commands, tasks
 
 from core.guild_config import load_guild_config, set_guild_state
-from core.themes import THEMES
+from core.themes import get_theme
 from core.wordle_utils import post_word
 
 logger = logging.getLogger("wordle-bot")
@@ -43,7 +43,6 @@ class Scheduler(commands.Cog):
     async def daily_task(self):
         await self.bot.wait_until_ready()
         guild_configs = await load_guild_config()
-        theme = THEMES.get("default")
 
         now_utc = datetime.now(timezone.utc)
         for guild_id_str, data in guild_configs.items():
@@ -76,6 +75,7 @@ class Scheduler(commands.Cog):
                 if not channel:
                     continue
                 self._attempted[guild_id_str] = today
+                theme = get_theme(data.get("theme"))
                 if await post_word(self.bot, channel_id, theme, state, timezone_name=tz_name):
                     # Persist only this guild's state so we don't clobber
                     # other guilds' updates made since this loop's config

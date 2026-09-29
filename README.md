@@ -4,6 +4,7 @@ A Discord bot that posts daily Wordle challenges to your server.
 
 - Post daily Wordle starter words automatically.
 - Tracks used words to avoid repeats.
+- Seasonal Themes (Halloween, Christmas) that a server admin can switch on.
 - Posts Wordle rules and creates a dedicated thread for each challenge.
 - One command to start daily Challenges in a channel, in your server's timezone.
 
@@ -35,9 +36,17 @@ parameters:
 
 `/wordle_replace`: Replace today's Starter Word when it can't be played (not accepted by Wordle, offensive, or too obscure). Works from any channel. The new Starter Word is posted in today's Challenge thread and the original Challenge post is edited to show it was replaced; results already posted in the thread still count. Both words stay in the used-words history.
 
-`/wordle_reset`: Clear the used-words history so previously used words can be picked again. Leaves today's already-posted word untouched.
+`/wordle_theme`: Choose the Theme for this server's Challenges from a dropdown. The Theme sets the word list, the post message and the thread name. It stays until you change it and takes effect from the next Challenge; today's Challenge is not changed. Available Themes:
 
-`/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), today's Starter Word, and how many words have been used so far.
+- Default: the full list of Wordle guesses.
+- Halloween: spooky words.
+- Christmas: festive words.
+
+Each Theme keeps its own used-words history, so a short seasonal list running out never reopens default words.
+
+`/wordle_reset`: Clear the current Theme's used-words history so its previously used words can be picked again. Other Themes' history and today's already-posted word are untouched.
+
+`/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), the current Theme, today's Starter Word, and how many of the current Theme's words have been used so far.
 
 `/wordle_help`: Post the Wordle Challenge rules. Available to everyone, no permission required.
 
@@ -81,14 +90,15 @@ wordle-discord-bot/
 ├─ core/
 │  ├─ guild_config.py           # Async, lock-guarded, atomic per-guild config storage
 │  ├─ wordle_utils.py           # Word picking and posting logic
-│  ├─ themes.py                 # Theme configurations; only "default" is wired to a command currently
+│  ├─ themes.py                 # Theme catalogue: word list, message and thread name per Theme
 ├─ cogs/
 │  ├─ wordle_commands.py        # Slash commands: /wordle_start, /wordle_stop, ...
 │  ├─ scheduler.py              # Background task for automatic posting
 ├─ data/
 │  ├─ guild_config.example.json # Template for the runtime state file (gitignored)
-│  ├─ wordle_words_christmas.json  # Not wired to any command yet
-│  ├─ wordle_words.json         # Word list for the default theme
+│  ├─ wordle_words.json         # Word list for the Default Theme
+│  ├─ wordle_words_halloween.json  # Word list for the Halloween Theme
+│  ├─ wordle_words_christmas.json  # Word list for the Christmas Theme
 ├─ tests/                       # pytest suite for core/
 ├─ .github/workflows/ci.yml     # Lint -> test -> build & push (gated)
 ├─ Dockerfile

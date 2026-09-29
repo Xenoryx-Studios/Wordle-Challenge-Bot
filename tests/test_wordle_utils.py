@@ -116,7 +116,8 @@ async def test_post_word_success_updates_state_and_persists(word_list_file):
     await post_word(bot, 55, theme, state)
 
     assert state["word"] == "APPLE"
-    assert state["used_words"] == ["APPLE"]
+    assert state["used_words"] == {"default": ["APPLE"]}
+    assert state["theme"] == "default"
     assert state["thread_id"] == 4242
     channel.send.assert_awaited_once_with("Today's word is **APPLE**!")
 
