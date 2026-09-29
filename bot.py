@@ -2,8 +2,9 @@ import logging
 import os
 import sys
 
-import discord
 from discord.ext import commands
+
+from core.settings import build_intents, reminders_enabled
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,7 +14,8 @@ logger = logging.getLogger("wordle-bot")
 
 logger.info("Starting Wordle Bot...")
 
-intents = discord.Intents.default()
+intents = build_intents()
+logger.info(f"Reminders {'enabled' if reminders_enabled() else 'disabled'} (ENABLE_REMINDERS)")
 
 
 class WordleBot(commands.Bot):

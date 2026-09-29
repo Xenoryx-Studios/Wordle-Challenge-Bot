@@ -4,8 +4,10 @@ A Discord bot that posts daily Wordle challenges to your server.
 
 - Post daily Wordle starter words automatically.
 - Tracks used words to avoid repeats.
+- Seasonal Themes (Halloween, Christmas) that a server admin can switch on.
 - Posts Wordle rules and creates a dedicated thread for each challenge.
 - One command to start daily Challenges in a channel, in your server's timezone.
+- Optional Reminders: members can opt in to a 21:00 ping if they haven't posted their Result yet (see [Enabling Reminders](#enabling-reminders)).
 
 # Challenge Rules
 
@@ -19,7 +21,7 @@ Have fun!
 
 # Commands
 
-All commands except `/wordle_help` require the **Manage Server** permission and can only be used in a server (not DMs).
+All commands except `/wordle_help`, `/wordle_status` and `/wordle_remind` require the **Manage Server** permission. All commands except `/wordle_help` can only be used in a server (not DMs).
 
 `/wordle_start`: Start daily Wordle Challenges in the channel where you run it.
 
@@ -33,11 +35,21 @@ parameters:
 
 `/wordle_stop`: Stop daily Challenges for this server. Used words are kept, so running `/wordle_start` again picks up where you left off.
 
-`/wordle_skip`: Post a new Wordle word right now, in the current channel, without reposting the rules or creating a new pinned message.
+`/wordle_replace`: Replace today's Starter Word when it can't be played (not accepted by Wordle, offensive, or too obscure). Works from any channel. The new Starter Word is posted in today's Challenge thread and the original Challenge post is edited to show it was replaced; results already posted in the thread still count. Both words stay in the used-words history.
 
-`/wordle_reset`: Clear the used-words history so previously used words can be picked again. Leaves today's already-posted word untouched.
+`/wordle_theme`: Choose the Theme for this server's Challenges from a dropdown. The Theme sets the word list, the post message and the thread name. It stays until you change it and takes effect from the next Challenge; today's Challenge is not changed. Available Themes:
 
-`/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), today's Starter Word, and how many words have been used so far.
+- Default: the full list of Wordle guesses.
+- Halloween: spooky words.
+- Christmas: festive words.
+
+Each Theme keeps its own used-words history, so a short seasonal list running out never reopens default words.
+
+`/wordle_reset`: Clear the current Theme's used-words history so its previously used words can be picked again. Other Themes' history and today's already-posted word are untouched.
+
+`/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), the current Theme, today's Starter Word, and how many of the current Theme's words have been used so far.
+
+`/wordle_remind on|off`: Opt in to (or out of) Reminders on this server. Available to everyone. At 21:00 in the server's timezone, three hours before the Wordle resets, the bot posts one message in today's Challenge thread mentioning every opted-in member who hasn't posted their Result there yet. Your choice lasts until you change it, including while the server is stopped. Only works when the bot's host has [enabled Reminders](#enabling-reminders).
 
 `/wordle_help`: Post the Wordle Challenge rules. Available to everyone, no permission required.
 
@@ -60,7 +72,18 @@ make logs
 make stop
 ```
 
-`make run` mounts `./data` into the container so word lists and per-server state persist across restarts. The real `data/guild_config.json` is created automatically on first run and is gitignored — `data/guild_config.example.json` is the committed template.
+`make run` mounts `./data` into the container so word lists and per-server state persist across restarts. The real `data/guild_config.json` is created automatically on first run and is gitignored: `data/guild_config.example.json` is the committed template.
+
+## Enabling Reminders
+
+Reminders are off by default. To find out who has posted their Result, the bot reads the messages in each day's Challenge thread (and nowhere else), which needs Discord's privileged **Message Content** intent. See `docs/adr/0001-detect-results-via-message-content.md` for why.
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), open your application, go to **Bot**, and turn on **Message Content Intent**. Bots in 100 or more servers need Discord's approval for this.
+2. Set `ENABLE_REMINDERS=1` when starting the bot:
+   - Locally: `export ENABLE_REMINDERS=1` before `python bot.py`.
+   - Docker: `make run TOKEN=your-bot-token ENABLE_REMINDERS=1`, or pass `-e ENABLE_REMINDERS=1` to `docker run`.
+
+Without the setting, the bot does not request the intent, so it connects even if the portal toggle is off, and `/wordle_remind` replies that Reminders are not enabled. Do not set it unless the portal toggle is on: Discord refuses the connection if the bot asks for an intent it has not been granted.
 
 # Development
 
@@ -81,14 +104,15 @@ wordle-discord-bot/
 ├─ core/
 │  ├─ guild_config.py           # Async, lock-guarded, atomic per-guild config storage
 │  ├─ wordle_utils.py           # Word picking and posting logic
-│  ├─ themes.py                 # Theme configurations; only "default" is wired to a command currently
+│  ├─ themes.py                 # Theme catalogue: word list, message and thread name per Theme
 ├─ cogs/
 │  ├─ wordle_commands.py        # Slash commands: /wordle_start, /wordle_stop, ...
 │  ├─ scheduler.py              # Background task for automatic posting
 ├─ data/
 │  ├─ guild_config.example.json # Template for the runtime state file (gitignored)
-│  ├─ wordle_words_christmas.json  # Not wired to any command yet
-│  ├─ wordle_words.json         # Word list for the default theme
+│  ├─ wordle_words.json         # Word list for the Default Theme
+│  ├─ wordle_words_halloween.json  # Word list for the Halloween Theme
+│  ├─ wordle_words_christmas.json  # Word list for the Christmas Theme
 ├─ tests/                       # pytest suite for core/
 ├─ .github/workflows/ci.yml     # Lint -> test -> build & push (gated)
 ├─ Dockerfile

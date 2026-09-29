@@ -37,12 +37,6 @@ async def get_guild_state(guild_id):
         return config.get(str(guild_id), {}).get("state", {})
 
 
-async def get_guild_timezone(guild_id):
-    async with _lock:
-        config = await asyncio.to_thread(_read_config_sync)
-        return config.get(str(guild_id), {}).get("timezone", "UTC")
-
-
 async def get_guild_entry(guild_id):
     async with _lock:
         config = await asyncio.to_thread(_read_config_sync)
@@ -63,6 +57,23 @@ async def set_guild_state(guild_id, state_data):
 
 async def set_guild_channel(guild_id, channel_id):
     await _update_guild(guild_id, lambda entry: entry.update(channel_id=channel_id))
+
+
+async def set_guild_theme(guild_id, theme_name):
+    await _update_guild(guild_id, lambda entry: entry.update(theme=theme_name))
+
+
+async def set_reminder_opt_in(guild_id, member_id, opted_in):
+    """Add or remove a member from the server's Reminder opt-ins."""
+    def mutate(entry):
+        members = set(entry.get("reminder_members", []))
+        if opted_in:
+            members.add(member_id)
+        else:
+            members.discard(member_id)
+        entry["reminder_members"] = sorted(members)
+
+    await _update_guild(guild_id, mutate)
 
 
 async def set_guild_timezone(guild_id, timezone):
