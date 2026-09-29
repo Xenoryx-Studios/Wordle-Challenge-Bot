@@ -28,13 +28,11 @@ async def test_set_guild_channel_and_state_do_not_clobber_each_other():
     assert config["1"]["state"] == {"word": "SLATE"}
 
 
-async def test_set_guild_schedule_stores_all_fields():
-    await guild_config.set_guild_schedule(7, 9, 30, "America/Toronto")
+async def test_set_guild_timezone_stores_timezone_only():
+    await guild_config.set_guild_timezone(7, "America/Toronto")
 
     config = await guild_config.load_guild_config()
-    assert config["7"]["hour"] == 9
-    assert config["7"]["minute"] == 30
-    assert config["7"]["timezone"] == "America/Toronto"
+    assert config["7"] == {"timezone": "America/Toronto"}
 
 
 async def test_save_is_atomic_no_leftover_tmp_file(isolated_guild_config):
@@ -70,14 +68,12 @@ async def test_concurrent_writes_to_different_guilds_do_not_clobber():
 
 async def test_get_guild_entry_returns_full_entry():
     await guild_config.set_guild_channel(5, 111)
-    await guild_config.set_guild_schedule(5, 9, 0, "UTC")
+    await guild_config.set_guild_timezone(5, "UTC")
     await guild_config.set_guild_state(5, {"word": "CRANE"})
 
     entry = await guild_config.get_guild_entry(5)
     assert entry == {
         "channel_id": 111,
-        "hour": 9,
-        "minute": 0,
         "timezone": "UTC",
         "state": {"word": "CRANE"},
     }
@@ -87,12 +83,14 @@ async def test_get_guild_entry_missing_guild_returns_empty_dict():
     assert await guild_config.get_guild_entry(999) == {}
 
 
-async def test_clear_guild_schedule_removes_schedule_but_keeps_state():
-    await guild_config.set_guild_channel(9, 222)
-    await guild_config.set_guild_schedule(9, 14, 15, "Europe/London")
+async def test_stop_guild_removes_posting_settings_but_keeps_state():
+    # Legacy hour/minute from the old scheduling command are cleaned up too.
+    await guild_config.save_guild_config(
+        {"9": {"channel_id": 222, "hour": 14, "minute": 15, "timezone": "Europe/London"}}
+    )
     await guild_config.set_guild_state(9, {"word": "STARE", "used_words": ["STARE"]})
 
-    await guild_config.clear_guild_schedule(9)
+    await guild_config.stop_guild(9)
 
     entry = await guild_config.get_guild_entry(9)
     assert "channel_id" not in entry

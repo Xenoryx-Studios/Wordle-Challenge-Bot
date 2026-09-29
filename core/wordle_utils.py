@@ -43,6 +43,19 @@ async def pick_word(theme_file, used_words=None):
     used_words.append(word)
     return word, used_words
 
+def local_today(timezone_name):
+    """Today's date (ISO string) in the given timezone, or UTC if unknown."""
+    try:
+        tz = pytz.timezone(timezone_name)
+    except pytz.exceptions.UnknownTimeZoneError:
+        tz = timezone.utc
+    return datetime.now(tz).date().isoformat()
+
+
+def challenge_posted_today(state, timezone_name):
+    return state.get("challenge_date") == local_today(timezone_name)
+
+
 async def post_word(bot, channel_id, theme, state, timezone_name="UTC"):
     """Post a Challenge. Returns True once the Challenge post was sent."""
     channel = bot.get_channel(channel_id)

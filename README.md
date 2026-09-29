@@ -5,7 +5,7 @@ A Discord bot that posts daily Wordle challenges to your server.
 - Post daily Wordle starter words automatically.
 - Tracks used words to avoid repeats.
 - Posts Wordle rules and creates a dedicated thread for each challenge.
-- Commands to manually initialize Wordle or set schedules.
+- One command to start daily Challenges in a channel, in your server's timezone.
 
 # Challenge Rules
 
@@ -13,7 +13,7 @@ A Discord bot that posts daily Wordle challenges to your server.
 1. Each day has a starter word.
 2. Use it as your first guess in Wordle.
 3. Try to solve in as few guesses as possible.
-4. Post your results in the channel using the Wordle share squares.
+4. Post your Result (the Wordle share squares) in the Challenge thread.
 Have fun!
 
 
@@ -21,27 +21,23 @@ Have fun!
 
 All commands except `/wordle_help` require the **Manage Server** permission and can only be used in a server (not DMs).
 
-`/wordle_init` : Initialize today's Wordle manually.
-
-- Posts the Wordle rules and pins the message.
-- Picks today's Wordle word.
-- Creates a thread for discussion.
-- Preserves any existing used-words history (does not reset it).
-
-`/wordle_schedule`: Set a daily posting time for Wordle Challenge.
+`/wordle_start`: Start daily Wordle Challenges in the channel where you run it.
 
 parameters:
-- hour: Hour in 24-hour format (0-23)
-- minute: Minute (0-59)
-- timezone: IANA timezone name (e.g., `America/Toronto`). See the [list of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for accepted values — use the value from the "TZ identifier" column.
+- timezone: IANA timezone name (e.g., `America/Toronto`). See the [list of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) for accepted values: use the value from the "TZ identifier" column.
 
-`/wordle_stop`: Disable automatic daily posting for this server. Word history is preserved — running `/wordle_schedule` again re-enables it.
+- Posts the Wordle rules and pins the message.
+- Posts today's Challenge straight away, unless today's Challenge was already posted.
+- From then on, posts a new Challenge every day at 00:00 in that timezone, when the new Wordle puzzle unlocks. If the bot was offline at 00:00, it posts as soon as it is back online. A server never gets more than one Challenge per day.
+- Running it again moves the Challenge to the current channel and timezone from the next day, and restarts a stopped server. Used words are kept.
+
+`/wordle_stop`: Stop daily Challenges for this server. Used words are kept, so running `/wordle_start` again picks up where you left off.
 
 `/wordle_skip`: Post a new Wordle word right now, in the current channel, without reposting the rules or creating a new pinned message.
 
 `/wordle_reset`: Clear the used-words history so previously used words can be picked again. Leaves today's already-posted word untouched.
 
-`/wordle_status`: Show the server's current posting channel, schedule, today's word, and how many words have been used so far.
+`/wordle_status`: Show the server's posting channel and timezone (or that it is stopped), today's Starter Word, and how many words have been used so far.
 
 `/wordle_help`: Post the Wordle Challenge rules. Available to everyone, no permission required.
 
@@ -87,7 +83,7 @@ wordle-discord-bot/
 │  ├─ wordle_utils.py           # Word picking and posting logic
 │  ├─ themes.py                 # Theme configurations; only "default" is wired to a command currently
 ├─ cogs/
-│  ├─ wordle_commands.py        # Slash commands: /wordle_init, /wordle_schedule
+│  ├─ wordle_commands.py        # Slash commands: /wordle_start, /wordle_stop, ...
 │  ├─ scheduler.py              # Background task for automatic posting
 ├─ data/
 │  ├─ guild_config.example.json # Template for the runtime state file (gitignored)

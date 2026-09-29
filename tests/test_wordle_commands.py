@@ -1,7 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from cogs.wordle_commands import WordleCommands
+from cogs.wordle_commands import RULES_MESSAGE, WordleCommands
 from core import guild_config
+from core.wordle_utils import local_today
 
 
 def _make_interaction(guild_id=1, channel_id=2, can_send=True):
@@ -27,37 +28,88 @@ def _make_interaction(guild_id=1, channel_id=2, can_send=True):
     return interaction
 
 
-async def test_wordle_init_blocks_when_bot_cannot_send_messages():
+def _make_cog(interaction):
     bot = MagicMock()
-    cog = WordleCommands(bot)
-    interaction = _make_interaction(can_send=False)
+    bot.get_channel = MagicMock(return_value=interaction.channel)
+    return WordleCommands(bot)
 
-    await cog.initialize.callback(cog, interaction)
+
+async def test_wordle_start_rejects_invalid_timezone():
+    interaction = _make_interaction()
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "Not/A_Real_Zone")
+
+    assert "invalid timezone" in interaction.followup.send.await_args.args[0].lower()
+    interaction.channel.send.assert_not_awaited()
+    assert await guild_config.load_guild_config() == {}
+
+
+async def test_wordle_start_blocks_when_bot_cannot_send_messages():
+    interaction = _make_interaction(can_send=False)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
 
     interaction.followup.send.assert_awaited_once()
-    sent_message = interaction.followup.send.await_args.args[0]
-    assert "permission" in sent_message.lower()
+    assert "permission" in interaction.followup.send.await_args.args[0].lower()
     interaction.channel.send.assert_not_awaited()
-
     # Nothing should have been persisted since we bailed out early.
     assert await guild_config.load_guild_config() == {}
 
 
-async def test_wordle_init_proceeds_when_permission_granted():
-    interaction = _make_interaction(guild_id=42, channel_id=7, can_send=True)
-    bot = MagicMock()
-    bot.get_channel = MagicMock(return_value=interaction.channel)
-    cog = WordleCommands(bot)
+async def test_wordle_start_saves_settings_posts_rules_and_todays_challenge():
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
 
-    await cog.initialize.callback(cog, interaction)
+    await cog.start.callback(cog, interaction, "America/Toronto")
 
-    assert interaction.channel.send.await_count == 2  # rules message + word message
-    interaction.followup.send.assert_awaited_once_with(
-        "Wordle initialized and rules posted!", ephemeral=True
-    )
+    entry = await guild_config.get_guild_entry(42)
+    assert entry["channel_id"] == 7
+    assert entry["timezone"] == "America/Toronto"
+    assert "hour" not in entry
+    assert interaction.channel.send.await_args_list[0].args[0] == RULES_MESSAGE
+    interaction.channel.send.return_value.pin.assert_awaited()
+    assert interaction.channel.send.await_count == 2  # rules + Challenge post
+    assert entry["state"]["word"] is not None
+    assert entry["state"]["challenge_date"] == local_today("America/Toronto")
+    reply = interaction.followup.send.await_args.args[0]
+    assert "00:00 America/Toronto" in reply
+
+
+async def test_wordle_start_restarts_stopped_server_and_keeps_used_words():
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE", "SLATE"], "challenge_date": "2020-01-01"})
+    interaction = _make_interaction(guild_id=42, channel_id=7)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
 
     state = await guild_config.get_guild_state(42)
-    assert state["word"] is not None
+    assert state["used_words"][:2] == ["CRANE", "SLATE"]
+    assert len(state["used_words"]) == 3  # today's new Starter Word added
+    assert state["word"] not in {"CRANE", "SLATE"}
+
+
+async def test_wordle_start_does_not_post_a_second_challenge_today():
+    today = local_today("UTC")
+    await guild_config.set_guild_channel(42, 7)
+    await guild_config.set_guild_state(42, {"word": "CRANE", "used_words": ["CRANE"], "challenge_date": today})
+    interaction = _make_interaction(guild_id=42, channel_id=8)
+    cog = _make_cog(interaction)
+
+    await cog.start.callback(cog, interaction, "UTC")
+
+    assert interaction.channel.send.await_count == 1  # rules only
+    entry = await guild_config.get_guild_entry(42)
+    assert entry["channel_id"] == 8  # moved for the next Challenge
+    assert entry["state"]["word"] == "CRANE"
+    assert "already posted" in interaction.followup.send.await_args.args[0]
+
+
+async def test_old_setup_commands_are_gone():
+    names = {command.name for command in WordleCommands(MagicMock()).get_app_commands()}
+    assert "wordle_start" in names
+    assert not names & {"wordle_init", "wordle_schedule"}
 
 
 async def test_wordle_reset_clears_used_words_but_keeps_current_word():
@@ -112,14 +164,18 @@ async def test_wordle_status_reports_unconfigured_server():
     await cog.status.callback(cog, interaction)
 
     report = interaction.followup.send.await_args.args[0]
-    assert "not set" in report
+    assert "Stopped" in report
+    assert "/wordle_start" in report
     assert "not posted yet" in report
 
 
 async def test_wordle_status_reports_configured_server():
     await guild_config.set_guild_channel(1, 123)
-    await guild_config.set_guild_schedule(1, 9, 30, "America/Toronto")
-    await guild_config.set_guild_state(1, {"word": "CRANE", "used_words": ["CRANE", "SLATE"]})
+    await guild_config.set_guild_timezone(1, "America/Toronto")
+    await guild_config.set_guild_state(
+        1,
+        {"word": "CRANE", "used_words": ["CRANE", "SLATE"], "challenge_date": local_today("America/Toronto")},
+    )
 
     bot = MagicMock()
     cog = WordleCommands(bot)
@@ -129,14 +185,15 @@ async def test_wordle_status_reports_configured_server():
 
     report = interaction.followup.send.await_args.args[0]
     assert "<#123>" in report
-    assert "09:30 America/Toronto" in report
+    assert "00:00 America/Toronto" in report
+    assert "Stopped" not in report
     assert "CRANE" in report
     assert "Words used so far: 2" in report
 
 
 async def test_wordle_stop_clears_schedule_but_keeps_word_history():
     await guild_config.set_guild_channel(1, 123)
-    await guild_config.set_guild_schedule(1, 9, 30, "America/Toronto")
+    await guild_config.set_guild_timezone(1, "America/Toronto")
     await guild_config.set_guild_state(1, {"word": "CRANE", "used_words": ["CRANE"]})
 
     bot = MagicMock()
@@ -147,15 +204,12 @@ async def test_wordle_stop_clears_schedule_but_keeps_word_history():
 
     entry = await guild_config.get_guild_entry(1)
     assert "channel_id" not in entry
-    assert "hour" not in entry
     assert entry["state"]["used_words"] == ["CRANE"]
     interaction.followup.send.assert_awaited_once()
-    assert "disabled" in interaction.followup.send.await_args.args[0].lower()
+    assert "stopped" in interaction.followup.send.await_args.args[0].lower()
 
 
 async def test_wordle_help_sends_rules_publicly():
-    from cogs.wordle_commands import RULES_MESSAGE
-
     bot = MagicMock()
     cog = WordleCommands(bot)
     interaction = _make_interaction()
