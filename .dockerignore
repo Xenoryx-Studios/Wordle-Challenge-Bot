@@ -9,7 +9,8 @@ env/
 .env
 *.log
 data/guild_config.json
-README.md
+**/*.md
+docs/
 LICENSE
 makefile
 tests/
