@@ -33,9 +33,46 @@ jobs:
       - name: Run tests
         run: pytest -v
 
+  # Decides whether the image needs rebuilding. Denylist on purpose: any
+  # change not listed here triggers a build, so forgetting to update the list
+  # costs an extra build rather than a stale image. Keep it in sync with
+  # .dockerignore (anything skipped here must not be copied into the image).
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes that affect the image
+        id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # No usable base (new branch, force-push to unknown commit): build.
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          image=false
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              *.md|docs/*|LICENSE|tests/*|pytest.ini|requirements-dev.txt|makefile|.github/dependabot.yml|.github/pull_request_template.md) ;;
+              *) echo "Image affected by: $file"; image=true ;;
+            esac
+          done <<< "$(git diff --name-only "$BASE...$HEAD")"
+
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build & Push Docker Image to GHCR
-    needs: [lint, test]
+    needs: [lint, test, changes]
+    if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
