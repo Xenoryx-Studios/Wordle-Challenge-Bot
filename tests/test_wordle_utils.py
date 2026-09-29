@@ -123,6 +123,29 @@ async def test_post_word_success_updates_state_and_persists(word_list_file):
     persisted = await guild_config.get_guild_state(321)
     assert persisted["word"] == "APPLE"
     assert persisted["thread_id"] == 4242
+    assert persisted["post_id"] == 999
+
+
+async def test_post_word_records_challenge_date_in_guild_timezone(word_list_file):
+    theme = dict(THEME, file=word_list_file(["apple"]))
+    channel = _make_fake_channel(guild_id=321)
+    bot = _make_fake_bot(channel)
+    state = {"word": None, "used_words": [], "thread_id": None}
+
+    # 23:30 UTC on Jan 1 is already Jan 2 in Pacific/Auckland.
+    fixed_now = datetime(2026, 1, 1, 23, 30, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.astimezone(tz) if tz else fixed_now
+
+    with patch("core.wordle_utils.datetime", FixedDatetime):
+        posted = await post_word(bot, 55, theme, state, timezone_name="Pacific/Auckland")
+
+    assert posted is True
+    persisted = await guild_config.get_guild_state(321)
+    assert persisted["challenge_date"] == "2026-01-02"
 
 
 async def test_post_word_persists_into_an_empty_but_present_state_dict(word_list_file):
@@ -151,6 +174,7 @@ async def test_post_word_empty_word_list_sends_warning_and_leaves_state_untouche
     await post_word(bot, 1, theme, state)
 
     assert state["word"] is None
+    assert "challenge_date" not in state
     channel.send.assert_awaited_once()
     assert "Couldn't load" in channel.send.await_args.args[0]
 
@@ -165,6 +189,8 @@ async def test_post_word_thread_creation_failure_does_not_raise(word_list_file):
 
     assert state["word"] == "APPLE"
     assert state["thread_id"] is None  # thread was never created
+    assert state["post_id"] == 999  # the Challenge post still went out
+    assert "challenge_date" in state
 
 
 async def test_post_word_thread_date_uses_guild_local_timezone(word_list_file):

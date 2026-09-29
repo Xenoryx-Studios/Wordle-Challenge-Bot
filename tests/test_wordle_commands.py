@@ -19,6 +19,7 @@ def _make_interaction(guild_id=1, channel_id=2, can_send=True):
     interaction.channel.permissions_for = MagicMock(return_value=permissions)
 
     message = MagicMock()
+    message.id = 555
     message.pin = AsyncMock()
     message.create_thread = AsyncMock(return_value=MagicMock(id=999))
     interaction.channel.send = AsyncMock(return_value=message)
